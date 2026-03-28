@@ -28,9 +28,9 @@ GitHub Actions → ECR → ECS Fargate → RDS PostgreSQL
 
 | Stage | Description | Status |
 |-------|-------------|--------|
-| 1 | Docker & Flask app | 🔄 In Progress |
-| 2 | Push image to ECR | ⏳ Pending |
-| 3 | VPC & Networking | ⏳ Pending |
+| 1 | Docker & Flask app | Done ✅ |
+| 2 | Push image to ECR | Done ✅ |
+| 3 | VPC & Networking | In Progress 🔄 |
 | 4 | RDS Database | ⏳ Pending |
 | 5 | ECS Fargate deployment | ⏳ Pending |
 | 6 | Application Load Balancer | ⏳ Pending |
