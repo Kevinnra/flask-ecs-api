@@ -26,3 +26,6 @@ htmlcov/
 
 # Secrets / task definitions
 task-definition.json
+infrastructure-ids.txt
+micelaneus.txt
+
