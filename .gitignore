@@ -1,31 +1,16 @@
-# Python cache and bytecode
 __pycache__/
-*.py[cod]
-*.pyo
-*.pyd
-
-# Virtual environments
-.venv/
-venv/
-env/
-
-# Environment files
+*.pyc
 .env
-.env.*
 
 # macOS
 .DS_Store
 
-# Logs
-*.log
 
-# Test and coverage
-.pytest_cache/
-.coverage
-htmlcov/
 
 # Secrets / task definitions
 task-definition.json
 infrastructure-ids.txt
 micelaneus.txt
+
+github-trust-policy.json
 
