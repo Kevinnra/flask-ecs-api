@@ -45,7 +45,7 @@ def index():
         count = RequestLog.query.count()
         return jsonify({
             "message": "Flask API running on ECS",
-            "version": "2.0",
+            "version": "3.0",
             "environment": os.getenv("ENVIRONMENT", "local"),
             "total_requests": count
         }), 200
