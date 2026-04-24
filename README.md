@@ -1,185 +1,153 @@
 # Flask ECS API
 
-A containerized Python REST API deployed on AWS ECS Fargate with RDS PostgreSQL, Application Load Balancer, and a fully automated CI/CD pipeline using GitHub Actions and OIDC authentication.
+A containerized Python REST API deployed on AWS ECS Fargate — demonstrates secure multi-tier architecture with private networking, managed database, and fully automated CI/CD.
+
+![Docker](https://img.shields.io/badge/Docker-2496ED?style=flat&logo=docker&logoColor=white)
+![Python](https://img.shields.io/badge/Python-3776AB?style=flat&logo=python&logoColor=white)
+![Flask](https://img.shields.io/badge/Flask-000000?style=flat&logo=flask&logoColor=white)
+![AWS ECS](https://img.shields.io/badge/ECS_Fargate-FF9900?style=flat&logo=amazon-aws&logoColor=white)
+![AWS RDS](https://img.shields.io/badge/RDS_PostgreSQL-527FFF?style=flat&logo=amazon-rds&logoColor=white)
+![GitHub Actions](https://img.shields.io/badge/GitHub_Actions-2088FF?style=flat&logo=github-actions&logoColor=white)
+
+Kevinn Ramirez - [Portfolio Page](https://kevinnramirez.com) · [LinkedIn](https://linkedin.com/in/kevinnramirez)
 
 ---
 
 ## Architecture
 
-```
-Internet
-    │
-    ▼
-Internet Gateway
-    │
-    ▼  (public subnets: ap-northeast-1a, 1c)
-Application Load Balancer  ←──── GitHub Actions (CI/CD)
-    │                                    │
-    ▼                              ECR (image registry)
-ECS Fargate  ──── NAT Gateway           │
-(Flask API)  ◄──────────────────────────┘
-    │                (image pull)
-    ▼
-RDS PostgreSQL
-(private subnets: ap-northeast-1a, 1c)
+![Architecture Diagram](./Resources/images/flask-ecs-architecture.jpg)
 
-Secrets Manager → DB credentials injected at runtime
-CloudWatch Logs → Container stdout/stderr
-```
+Traffic enters through an Internet Gateway and reaches the Application Load Balancer in public subnets. The ALB forwards requests to ECS Fargate tasks running in private subnets, which connect to an RDS PostgreSQL instance also isolated in private subnets. Database credentials are never stored in code — ECS pulls them from Secrets Manager at container startup via an IAM execution role.
 
-**Key security principle:** The application and database have no direct internet access. Only the ALB lives in public subnets. Everything else is behind it in private subnets.
+> [!WARNING] The AWS infrastructure for this project (ECS service, RDS, ALB, NAT Gateway) has been torn down to avoid ongoing costs. The architecture diagram and documentation reflect the fully working system that was deployed and tested. The Docker image and application code run locally following the instructions below.
 
 ---
 
 ## Tech Stack
 
-| Layer | Technology |
+| Service | Purpose |
 |---|---|
-| Application | Python, Flask, Gunicorn, SQLAlchemy |
-| Containerization | Docker (linux/amd64), ECR |
-| Compute | ECS Fargate |
-| Database | RDS PostgreSQL (db.t3.micro) |
-| Networking | VPC, public/private subnets, IGW, NAT Gateway, Security Groups |
-| Load Balancing | Application Load Balancer |
-| Secrets | AWS Secrets Manager |
-| CI/CD | GitHub Actions with OIDC (no stored credentials) |
-| Logging | CloudWatch Logs |
+| Python + Flask | REST API application |
+| Gunicorn | Production WSGI server |
+| Docker | Container image |
+| Amazon ECR | Container registry |
+| ECS Fargate | Serverless container compute |
+| Application Load Balancer | Public traffic entry, health checks |
+| RDS PostgreSQL | Managed relational database |
+| VPC | Isolated network with public/private subnets |
+| NAT Gateway | Outbound internet for private subnet resources |
+| AWS Secrets Manager | Database credential storage |
+| CloudWatch Logs | Container log aggregation |
+| GitHub Actions + OIDC | CI/CD pipeline, no stored credentials |
 
 ---
 
-## API Endpoints
+## Features
 
-| Endpoint | Method | Description |
-|---|---|---|
-| `/` | GET | Returns request count from DB |
-| `/health` | GET | Health check (used by ALB) |
-| `/status` | GET | Environment and DB host info |
-| `/init-db` | GET | Creates database tables |
+- Built a custom VPC with public and private subnet separation across two Availability Zones
+- Deployed ECS Fargate service in private subnets with no public IP exposure
+- Configured Application Load Balancer with `/health` health checks routing to ECS tasks
+- Implemented security group chaining — RDS accepts connections only from the ECS security group
+- Stored database credentials in Secrets Manager, injected at container startup via IAM role
+- Automated CI/CD pipeline using GitHub Actions with OIDC — no AWS keys stored in GitHub
+- Built Docker images cross-compiled for `linux/amd64` to ensure ECS compatibility from Apple Silicon
 
 ---
 
 ## Project Structure
 
+<details>
+<summary>View file tree</summary>
+
 ```
 flask-ecs-api/
 ├── app/
-│   ├── main.py              # Flask application
-│   └── requirements.txt     # Python dependencies
+│   ├── main.py              # Flask app — endpoints, SQLAlchemy models, env var config
+│   └── requirements.txt     # Python dependencies (Flask, gunicorn, psycopg2, SQLAlchemy)
 ├── .github/
 │   └── workflows/
-│       └── deploy.yml       # CI/CD pipeline
-├── Dockerfile               # Container definition
-├── .dockerignore
-└── task-definition.json     # ECS task definition
+│       └── deploy.yml       # CI/CD pipeline — build, push to ECR, deploy to ECS
+├── Dockerfile               # Container definition — python:3.12-slim, gunicorn entrypoint
+├── .dockerignore            # Excludes __pycache__, .env, .git from image
+└── task-definition.json     # ECS task definition — CPU, memory, env vars, secret refs
 ```
+
+</details>
 
 ---
 
-## CI/CD Pipeline
+## How to Run Locally
 
-Every push to `main` triggers the pipeline automatically:
-
-```
-1. Authenticate to AWS via OIDC (no stored credentials)
-2. Build Docker image for linux/amd64 (cross-platform)
-3. Tag with Git commit SHA + latest
-4. Push to ECR
-5. Pull current task definition
-6. Update image reference
-7. Deploy to ECS — waits for service stability
-```
-
-No AWS credentials are stored in GitHub. The pipeline uses OIDC to assume a role at runtime with least-privilege permissions.
-
----
-
-## Infrastructure
-
-Built entirely using AWS CLI commands. Key networking concepts applied:
-
-**VPC Design:**
-- `/16` CIDR block giving 65,536 addresses
-- Two public subnets across two AZs for ALB high availability
-- Two private subnets across two AZs for ECS and RDS
-- NAT Gateway allows ECS tasks outbound access without a public IP
-
-**Security Groups (least-privilege):**
-- ALB SG: accepts port 80 from `0.0.0.0/0`
-- ECS SG: accepts port 5000 from ALB SG only
-- RDS SG: accepts port 5432 from ECS SG only
-
-**Secrets:**
-- DB credentials stored in AWS Secrets Manager
-- ECS pulls secrets at task startup via IAM role
-- No credentials in code, task definition, or environment variables
-
----
-
-## Running Locally
+**Prerequisites:** Docker Desktop, Python 3.12+
 
 ```bash
-# Build for local testing
+# Clone the repo
+git clone https://github.com/Kevinnra/flask-ecs-api.git
+cd flask-ecs-api
+
+# Build the image
 docker build -t flask-api:local .
 
 # Run with environment variables
 docker run -p 8080:5000 \
   -e ENVIRONMENT=local \
-  -e DB_HOST=localhost \
   flask-api:local
-
-# Test endpoints
-curl http://localhost:8080/health
-curl http://localhost:8080/
-curl http://localhost:8080/status
 ```
 
-**Note:** Apple Silicon users must use `--platform linux/amd64` for ECS-compatible builds:
+**Expected output:**
+```
+[INFO] Starting gunicorn 22.0.0
+[INFO] Listening at: http://0.0.0.0:5000
+[INFO] Booting worker with pid: ...
+```
 
+Test the endpoints:
 ```bash
-docker buildx build --platform linux/amd64 -t flask-api:v1 .
+curl http://localhost:8080/health
+# {"status": "healthy", "timestamp": "..."}
+
+curl http://localhost:8080/
+# {"message": "Flask API running on ECS", "version": "3.0", ...}
 ```
 
+> **Apple Silicon note:** Use `docker buildx build --platform linux/amd64` for ECS-compatible builds.
+
+## Proof it works
+
+API running live on ECS behind the Application Load Balancer:
+
+![API root endpoint](./Resources/images/screenshot-root.jpg)
+![Health endpoint](./Resources/images/screenshot-health.jpg)
+![Status endpoint](./Resources/images/screenshot-status.jpg)
 ---
 
-## Key Learnings
+## Key Decisions
 
-- **Container platform mismatch**: Apple Silicon builds `arm64` by default. ECS requires `linux/amd64`. Always specify `--platform` explicitly, or automate it in CI/CD.
-- **`0.0.0.0` binding**: Flask must bind to `0.0.0.0` to accept connections from outside the container. `127.0.0.1` only accepts connections from within the container itself.
-- **Private subnets need NAT**: Resources in private subnets have no path to the internet by default. NAT Gateway lives in a public subnet and provides outbound-only internet access for private resources.
-- **Security group chaining**: Instead of opening ports to IP ranges, referencing another security group as the source allows permissions to follow the resource regardless of IP changes.
-- **OIDC over stored credentials**: GitHub OIDC eliminates the need to store AWS access keys. GitHub gets a short-lived token valid only for that workflow run.
-
----
-
-## Deployment Order
-
-When rebuilding from scratch:
-
-1. VPC + subnets + IGW + NAT Gateway + route tables
-2. Security groups
-3. RDS subnet group + RDS instance
-4. ECR repository + push initial image
-5. ECS cluster + task definition + service
-6. ALB + target group + listener
-7. Update ECS service with ALB
-
-Teardown order (reverse): ECS service → NAT Gateway → EIP release → ALB → RDS (if removing).
+- **Chose ECS Fargate over EC2** — no server management needed; the goal was learning container orchestration, not instance administration
+- **Chose OIDC over stored IAM credentials** — GitHub gets a short-lived token per workflow run instead of long-lived access keys that need rotation and can leak
+- **Chose Secrets Manager over task definition env vars** — task definitions are visible to anyone with IAM describe permissions; credentials should never appear in plain text there
+- **Chose NAT Gateway over VPC Endpoints** — VPC Endpoints are cheaper long-term but more complex; NAT Gateway was the right tradeoff for a learning project that tears down between sessions
+- **Chose security group chaining over CIDR rules** — referencing a security group as the source means permissions follow resources even if their IPs change
 
 ---
 
-## Cost Notes
+## Challenges and Solutions
 
-Approximate monthly cost when running continuously:
+- **Problem:** ECS failed to pull the image with `platform mismatch: linux/amd64` → **Solution:** Apple Silicon builds `arm64` by default; added `--platform linux/amd64` to the build command and baked it into the GitHub Actions workflow permanently
+- **Problem:** ECS tasks in private subnets could not reach ECR to pull images → **Solution:** Deployed a NAT Gateway in the public subnet and added a `0.0.0.0/0` route in the private route table pointing to it
+- **Problem:** ECS service stuck at 0 running tasks with no visible error → **Solution:** Checked service events with `aws ecs describe-services --query 'services[0].events'` — the failure reason was in the events list, not the task logs
 
-| Resource | Cost |
-|---|---|
-| ECS Fargate (0.25 vCPU, 0.5GB) | ~$9 |
-| RDS db.t3.micro | ~$15 |
-| ALB | ~$18 |
-| NAT Gateway | ~$33 |
-| **Total** | **~$75/month** |
+---
 
+## Lessons Learned
 
+- The NAT Gateway is the most expensive invisible resource in a basic VPC — knowing when to replace it with VPC Endpoints is a real cost optimization skill
+- Security groups are additive by default — building the three-layer chain (ALB → ECS → RDS) made the concept of least-privilege networking concrete, not theoretical
+- Debugging containerized deployments requires knowing which layer broke: CloudWatch for app errors, ECS service events for deployment failures, VPC for network issues
+- OIDC for CI/CD is simpler than managing IAM users — fewer things to rotate, fewer things that can leak
+- `0.0.0.0` in Flask is about network interfaces, not ports — without it the app only listens to itself inside the container
+
+---
 ## Author
 
-Build with ☁️ by Kevinn Ramirez - [Web Portfolio](https://www.kevinnramirez.com)
+Build with ☁️ by Kevinn Ramirez - [Web Portfolio](https://www.kevinnramirez.com) · [LinkedIn](https://www.linkedin.com/in/kevinnramirez)
